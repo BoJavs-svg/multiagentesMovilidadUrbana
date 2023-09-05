@@ -164,7 +164,7 @@ class World:
                     ax.plot(col + 0.5, 12 - row + 0.5, 'bs', markersize=10)  # Person
         
         legend_handles = [plt.Line2D([0], [0], marker='o', color=stoplight.state, label=f'Stoplight {i+1} - {stoplight.state}', markersize=10, markerfacecolor=stoplight.state) for i, stoplight in enumerate(self.stoplights)]
-        # ax.legend(handles=legend_handles, loc='upper left')
+        ax.legend(handles=legend_handles, loc='upper left')
         
         ax.set_xlim(0, 13)
         ax.set_ylim(0, 13)
@@ -176,10 +176,8 @@ class World:
 class model(Model):
     def __init__(self,n_car,n_people):
         self.m=World()
-        self.a_time=7
         self.last_id=0
         self.schedule = RandomActivation(self)
-        self.auction_counter=0
         self.stoplight_agents = []
         self.t_performance = []
         self.c_performance = []
@@ -204,36 +202,24 @@ class model(Model):
                 agent=peopleAgent(_,self.m,row,col)
                 self.schedule.add(agent)
                 self.last_id=_+1
+        self.auction_agent = AuctionAgent(unique_id="Auction", model=self, stoplights=self.stoplight_agents)
+        self.schedule.add(self.auction_agent)
+        self.last_id=_+1
     def step(self):
         agents_to_remove = []
         for agent in self.schedule.agents:
-            if isinstance(agent, StoplightAgent):
-                if self.a_time==0:
-                    for stop in self.stoplight_agents:
-                        stop.auction_active=True
-                if agent.auction_active:
-                    agent.bid()  # Calculate bid for each stoplight
-                    winning_stoplight = max(self.stoplight_agents, key=lambda x: x.bid_price)
-                    for stoplight in self.stoplight_agents:
-                        if stoplight == winning_stoplight:
-                            stoplight.state = "green"  # Set the winning stoplight to green
-                            stoplight.time = 0  # Reset time waited
-                            self.a_time=stoplight.max_green_duration+stoplight.max_yellow_duration
-                            self.m.clear_crossroad(stoplight.unique_id,1)
-                        else:
-                            stoplight.state = "red"  # Set other stoplights to red 
-                            self.m.clear_crossroad(stoplight.unique_id,0)
-                else:
-                    self.a_time-=1/4
             agent.step()
             if (isinstance(agent, carAgent) or isinstance(agent, peopleAgent)) and agent.beliefs['position'] == agent.desires['destination']:
                 agents_to_remove.append(agent)
+
         for agent in agents_to_remove:
             self.schedule.remove(agent)
+
         spawn=random.randint(0,1)
         if spawn==1:
             self.spawn_car()
             self.spawn_person()
+
         t,c=self.calculate_performance()
         self.t_performance.append(t)
         self.c_performance.append(c)
@@ -418,14 +404,13 @@ class StoplightAgent(Agent):
         self.current_state_duration = 0
         self.max_green_duration = 5 
         self.max_yellow_duration = 3 
-        self.auction_active = True 
-    def bid(self):
-        if self.auction_active:
-            # Calculate bid price based on time waited and number of cars
-            time_weight = 0.1  
-            cars_weight = 0.9 
-            self.bid_price = (time_weight * self.time) + (cars_weight * self.num_cars)
-            self.auction_active=False
+
+    def bid(self):    
+        # Calculate bid price based on time waited and number of cars
+        time_weight = 0.1  
+        cars_weight = 0.9 
+        self.bid_price = (time_weight * self.time) + (cars_weight * self.num_cars)
+
     def step(self):
         # Check the timer to change the state
         self.time+=1
@@ -440,7 +425,42 @@ class StoplightAgent(Agent):
             if self.current_state_duration >= self.max_yellow_duration:
                 self.state = "red"
                 self.current_state_duration = 0
+class AuctionAgent(Agent):
+    def __init__(self, unique_id, model, stoplights):
+        super().__init__(unique_id, model)
+        self.stoplights = stoplights
+        self.auction_active = True  # Auction is initially active
+        self.winning_stoplight = None  # Store the winning stoplight here
+        self.time=0 
 
+    def bid(self):
+        if self.auction_active:
+            # Calculate bid for each stoplight
+            for stoplight in self.stoplights:
+                # Your bidding logic here; you can consider time waited, number of cars, etc.
+                stoplight.bid()
+            # Determine the winning stoplight based on bids
+            self.winning_stoplight = max(self.stoplights, key=lambda x: x.bid_price)
+
+            # Activate the winning stoplight and deactivate others
+            for stoplight in self.stoplights:
+                if stoplight == self.winning_stoplight:
+                    stoplight.state = "green"
+                    stoplight.time = 0  # Reset time waited
+                else:
+                    stoplight.state = "red"
+
+            # Deactivate the auction
+            self.auction_active = False
+            self.time=self.winning_stoplight.max_green_duration + self.winning_stoplight.max_yellow_duration
+
+    def step(self):
+        # Perform bidding at the beginning of each step
+        if self.time==0:
+            self.auction_active=True
+        else:
+            self.time-=1
+        self.bid()
 
 def animate(frame, model):
     model.step()  # Step the model
@@ -449,7 +469,7 @@ def animate(frame, model):
 
 n_car=10
 n_people=1
-t = 5
+t = 1
 if t == 0:
     ##Test display crude matplotlib visuals
     mod = model(n_car=n_car,n_people=n_people)
