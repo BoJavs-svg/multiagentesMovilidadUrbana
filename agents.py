@@ -9,7 +9,7 @@ from mesa import Agent, Model
 from mesa.time import RandomActivation
 from mesa.space import MultiGrid
 import math
-import json
+import csv
 class World:
     def __init__(self):
         #Generate map
@@ -145,33 +145,6 @@ class World:
             self.map[space[0]][space[1]]=set #0 o 1
         for space in self.opposit_cross_road[side]:
             self.map[space[0]][space[1]]=set #0 o 1
-    def display_map(self):
-        ax.clear()    
-        # Paths
-        for row in range(13):
-            for col in range(13):
-                if self.map[row][col] == 0:
-                    ax.add_patch(plt.Rectangle((col, 12 - row), 1, 1, color='green'))  # Walkable area
-                elif self.map[row][col] == 1:
-                    ax.add_patch(plt.Rectangle((col, 12 - row), 1, 1, color='black'))  # Driveable area
-        
-        #Entities
-        for row in range(13):
-            for col in range(13):
-                if self.entity_map[row][col] == 'c':
-                    ax.plot(col + 0.5, 12 - row + 0.5, 'r^', markersize=10)  # Car
-                elif self.entity_map[row][col] == 'p':
-                    ax.plot(col + 0.5, 12 - row + 0.5, 'bs', markersize=10)  # Person
-        
-        legend_handles = [plt.Line2D([0], [0], marker='o', color=stoplight.state, label=f'Stoplight {i+1} - {stoplight.state}', markersize=10, markerfacecolor=stoplight.state) for i, stoplight in enumerate(self.stoplights)]
-        ax.legend(handles=legend_handles, loc='upper left')
-        
-        ax.set_xlim(0, 13)
-        ax.set_ylim(0, 13)
-        ax.invert_yaxis()
-        ax.set_xticks(range(14))  # Adjust the range to include 13
-        ax.set_yticks(range(14))  # Adjust the range to include 13
-        ax.grid()
 
 class model(Model):
     def __init__(self,n_car,n_people):
@@ -200,19 +173,20 @@ class model(Model):
             row,col=self.m.add_person(_)
             if (row,col) !=(-1,-1):
                 agent=peopleAgent(_,self.m,row,col)
-                self.schedule.add(agent)
                 self.last_id=_+1
+                self.schedule.add(agent)
         self.auction_agent = AuctionAgent(unique_id="Auction", model=self, stoplights=self.stoplight_agents)
         self.schedule.add(self.auction_agent)
-        self.last_id=_+1
+        self.agents_to_remove = []
+
     def step(self):
-        agents_to_remove = []
+        self.agents_to_remove = []
         for agent in self.schedule.agents:
             agent.step()
             if (isinstance(agent, carAgent) or isinstance(agent, peopleAgent)) and agent.beliefs['position'] == agent.desires['destination']:
-                agents_to_remove.append(agent)
+                self.agents_to_remove.append(agent)
 
-        for agent in agents_to_remove:
+        for agent in self.agents_to_remove:
             self.schedule.remove(agent)
 
         spawn=random.randint(0,1)
@@ -462,142 +436,60 @@ class AuctionAgent(Agent):
             self.time-=1
         self.bid()
 
-def animate(frame, model):
-    model.step()  # Step the model
-    ax.clear()  # Clear the current plot
-    model.m.display_map()  # Display the updated map
-
 n_car=10
 n_people=1
-t = 1
-if t == 0:
-    ##Test display crude matplotlib visuals
-    mod = model(n_car=n_car,n_people=n_people)
-    fig, ax = plt.subplots(figsize=(7, 7))
-    ani = animation.FuncAnimation(fig, animate, frames=100, repeat=False, fargs=(mod,))
 
-    plt.show()
-    time = mod.t_performance
-    cars = mod.c_performance
-    fig, ((ax1, ax2),(ax3,ax4)) = plt.subplots(2,2, figsize=(15, 12))
-    fig.tight_layout(pad=10.0)
-    ax1.hist(time,edgecolor='black')
-    ax1.set_xlabel('Time')
-    ax1.set_title('Time stopped')
-
-    ax2.hist(cars,edgecolor='black')
-    ax2.set_xlabel('Cars')
-    ax2.set_title('Cars waiting')
-    
-    ax3.plot(range(len(time)),time)
-    ax3.set_xlabel("Steps")
-    ax3.set_ylabel("Time waited")
-    ax3.set_title("Time waited per attempt")
-    
-
-    ax4.plot(range(len(cars)),cars)
-    ax4.set_xlabel("Steps")
-    ax4.set_ylabel("Cars waiting")
-    ax4.set_title("Cars waiting per step per attempt")
-    plt.show()
-elif t == 1:
-    ##Test to check statistics
-    time_hist= []
-    cars_hist= []
-    time = []
-    cars=[]
-    num_attempts = 100
-    fig, ((ax1, ax2),(ax3,ax4),(ax5,ax6)) = plt.subplots(3,2, figsize=(15, 12))
-    fig.tight_layout(pad=10.0)
-    for attempt in range(num_attempts):
-        print(f"Attempt: {attempt}")
-        mod=model(n_car=n_car,n_people=n_people)
-        for _ in range(100):
-            mod.step()
-        time_hist.extend(mod.t_performance)
-        cars_hist.extend(mod.c_performance)
-        cars.append(mod.c_performance)
-        time.append(mod.t_performance)
-
-    ax1.hist(time_hist,edgecolor='black')
-    ax1.set_xlabel('Time')
-    ax1.set_title('Time stopped')
-
-    ax2.hist(cars_hist,edgecolor='black')
-    ax2.set_xlabel('Cars')
-    ax2.set_title('Cars waiting')
-
-    for t in time:
-        ax3.plot(range(len(t)),t)
-    ax3.set_xlabel("Steps")
-    ax3.set_ylabel("Time waited")
-    ax3.set_title("Time waited per attempt")
-    
-    for c in cars:
-        ax4.plot(range(len(c)),c)
-    ax4.set_xlabel("Steps")
-    ax4.set_ylabel("Cars waiting")
-    ax4.set_title("Cars waiting per step per attempt")
-    
-    # Sort the data based on performance metric (e.g., minimum and maximum time waited)
-    best_case_idx = min(range(len(time)), key=lambda i: max(time[i]))
-    worst_case_idx = max(range(len(time)), key=lambda i: max(time[i]))
-
-    best_time = time[best_case_idx]
-    worst_time = time[worst_case_idx]
-
-    # Sort the data based on performance metric (e.g., minimum and maximum cars waiting)
-    best_case_idx_cars = min(range(len(cars)), key=lambda i: max(cars[i]))
-    worst_case_idx_cars = max(range(len(cars)), key=lambda i: max(cars[i]))
-
-    best_cars = cars[best_case_idx_cars]
-    worst_cars = cars[worst_case_idx_cars]
-
-    # Plot the best and worst cases in ax3 and ax4
-    ax5.plot(range(len(best_time)), best_time, label="Best Case")
-    ax5.plot(range(len(worst_time)), worst_time, label="Worst Case")
-    ax5.set_xlabel("Steps")
-    ax5.set_ylabel("Time waited")
-    ax5.set_title("Time waited for Best and Worst Cases")
-    ax5.legend()
-
-    ax6.plot(range(len(best_cars)), best_cars, label="Best Case")
-    ax6.plot(range(len(worst_cars)), worst_cars, label="Worst Case")
-    ax6.set_xlabel("Steps")
-    ax6.set_ylabel("Cars waiting")
-    ax6.set_title("Cars waiting for Best and Worst Cases")
-    ax6.legend()
-    
-    plt.show()
-else:
- # Simulación para json
-    mod = model(n_car=n_car, n_people=n_people)
-    agent_info_history = []  # Inicializa una lista para almacenar la información de los agentes en cada paso
-    for step in range(100):  # Ajusta el número de pasos según sea necesario
-        mod.step()
-
-        step_info = {"step": step}  # Crea un título para el paso actual
-        agent_info_step = []  # Inicializa una lista para almacenar la información de los agentes en cada paso
-
-        # Recopila la información importante de cada agente en cada paso
-        for agent in mod.schedule.agents:
+mod = model(n_car=n_car, n_people=n_people)
+agent_info_history = []  # Inicializa una lista para almacenar la información de los agentes en cada paso
+i=0
+for step in range(100):  # Ajusta el número de pasos según sea necesario
+    mod.step()
+    for agent in mod.agents_to_remove:
+        agent_info = {
+            "" : i,
+            "step":step,
+            "type" : "carAgent" if isinstance(agent, carAgent) else "peopleAgent",
+            "unique_id" : agent.unique_id,
+            "state" : "0",
+            "positionX" : "0" ,
+            "positionX" : "0",
+            "last" : True
+            }
+        i+=1
+        agent_info_history.append(agent_info)  # Agrega el título y la información al historial
+    # Recopila la información importante de cada agente en cada paso
+    for agent in mod.schedule.agents:
+        if not isinstance(agent,AuctionAgent):
             agent_info = {}
+            agent_info[""] = i
+            i+=1
+            agent_info["step"]=step
             if isinstance(agent, carAgent) or isinstance(agent, peopleAgent):
                 # Información para carAgent y peopleAgent
                 agent_info["type"] = "carAgent" if isinstance(agent, carAgent) else "peopleAgent"
                 agent_info["unique_id"] = agent.unique_id
-                agent_info["position"] = agent.beliefs['position']
+                agent_info["state"] = "0"
+                agent_info["positionX"] = agent.beliefs['position'][0]
+                agent_info["positionY"] = agent.beliefs['position'][1]
+                agent_info["last"]=False
             elif isinstance(agent, StoplightAgent):
                 # Información para StoplightAgent
                 agent_info["type"] = "StoplightAgent"
                 agent_info["unique_id"] = agent.unique_id
                 agent_info["state"] = agent.state
+                agent_info["positionX"] = 0
+                agent_info["positionY"] = 0
+                agent_info["last"]=False
+            agent_info_history.append(agent_info)  # Agrega el título y la información al historial
+            # print(agent_info)
+    # print(step)
 
-            agent_info_step.append(agent_info)
+csv_filename = 'agent_info_history.csv'
+# Rewrite the agent_info_history into the specified CSV file
+with open(csv_filename, 'w', newline='') as csv_file:
+    fieldnames = ["", "step", "type", "unique_id", "state", "positionX", "positionY","last"]
+    writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+    writer.writeheader()
+    writer.writerows(agent_info_history)
 
-        step_info["agents"] = agent_info_step  # Agrega la información del paso actual al título del paso
-        agent_info_history.append(step_info)  # Agrega el título y la información al historial
-    
-    # Guarda la información de todos los pasos en un solo archivo JSON
-    with open('agent_info_history.json', 'w') as json_file:
-        json.dump(agent_info_history, json_file, indent=4)
+print(f"CSV file '{csv_filename}' has been rewritten.")
