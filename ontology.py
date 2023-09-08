@@ -40,6 +40,9 @@ with onto:
 
     class StopLightAgent(ImmobileAgent):
         pass
+    
+    class AuctionAgent(ImmobileAgent):
+        pass
 
 #properties of agents
 with onto: 
@@ -76,11 +79,21 @@ with onto:
     class carAmount(StopLightAgent >> int):   #cantidad de carros en su línea
         pass
 
+    class winningStopLight(AuctionAgent >> str): #semaforo ganador de la subasta
+        pass
+
+    class auctionActive(AuctionAgent >> bool): #es posible realizar la subasta?
+        pass
+
+    class time(AuctionAgent >> int): #tiempo que se asigna al semaforo ganador
+        pass
 
 #instances of agents
 trafficLight = StopLightAgent()
 person =  PeopleAgent()
 truck = CarAgent()
+auctioneer = AuctionAgent()
+
 
 #Add properties 
 person.id.append(1)
@@ -94,6 +107,10 @@ truck.destination.append(Coordinate((20, 20)))
 trafficLight.state.append("green")
 trafficLight.waitTime.append(10)
 trafficLight.carAmount.append(9)
+auctioneer.winningStopLight.append(1)
+auctioneer.auctionActive.append(True)
+auctioneer.time.append(10)
+
 
 #Save ontology
 onto.save(file="ontology.owl", format = "rdfxml")
